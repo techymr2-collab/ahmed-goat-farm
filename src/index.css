@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  --font-heading: "Lexend", system-ui, sans-serif;
+  --font-sans: "Source Sans 3", system-ui, sans-serif;
+
+  --color-primary: #15803d;
+  --color-primary-dark: #14532d;
+  --color-primary-light: #22c55e;
+  --color-accent: #a16207;
+  --color-accent-light: #fde68a;
+  --color-background: #f0fdf4;
+  --color-surface: #ffffff;
+  --color-foreground: #14532d;
+  --color-muted: #eaf3ec;
+  --color-muted-foreground: #5b6b60;
+  --color-border: #d5e8d9;
+  --color-destructive: #dc2626;
+  --color-ring: #15803d;
+}
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
