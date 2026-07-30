@@ -14,7 +14,7 @@ const STATUS_TONE = { Active: 'green', Sold: 'amber', Deceased: 'gray' }
 
 export default function Goats() {
   const { data: goats, loading, error, refetch } = useSupabaseTable(
-    () => supabase.from('goats').select('*').order('created_at', { ascending: false }),
+    () => supabase.from('goats').select('*').order('tag_id', { ascending: true }),
     []
   )
 
