@@ -8,9 +8,13 @@ import Badge from '../components/Badge'
 import EmptyState from '../components/EmptyState'
 import SaleModal from '../components/SaleModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import DateRangeFilter from '../components/DateRangeFilter'
 import { formatDate, formatINR } from '../lib/format'
+import { getMonthRange, getYearRange } from '../lib/dateRanges'
 
 const TYPE_TONE = { Goat: 'green', Milk: 'amber', Other: 'gray' }
+
+const PERIOD_LABELS = { month: 'This month', lastMonth: 'Last month', year: 'This year', all: 'All time' }
 
 export default function Sales() {
   const { data: goats } = useSupabaseTable(() => supabase.from('goats').select('id, tag_id, name, sex').order('tag_id'), [])
@@ -26,18 +30,37 @@ export default function Sales() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [range, setRange] = useState({ preset: 'month', from: null, to: null })
 
-  const { totalAll, totalThisMonth } = useMemo(() => {
-    const now = new Date()
-    const thisMonth = records
-      .filter((r) => {
-        const d = new Date(r.sale_date)
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-      })
-      .reduce((sum, r) => sum + Number(r.amount), 0)
-    const all = records.reduce((sum, r) => sum + Number(r.amount), 0)
-    return { totalAll: all, totalThisMonth: thisMonth }
-  }, [records])
+  const { from, to } = useMemo(() => {
+    switch (range.preset) {
+      case 'month':
+        return getMonthRange(0)
+      case 'lastMonth':
+        return getMonthRange(-1)
+      case 'year':
+        return getYearRange()
+      case 'custom':
+        return { from: range.from, to: range.to }
+      default:
+        return { from: null, to: null }
+    }
+  }, [range])
+
+  const filtered = useMemo(() => {
+    if (!from || !to) return records
+    return records.filter((r) => r.sale_date >= from && r.sale_date <= to)
+  }, [records, from, to])
+
+  const periodTotal = useMemo(() => filtered.reduce((sum, r) => sum + Number(r.amount), 0), [filtered])
+  const allTimeTotal = useMemo(() => records.reduce((sum, r) => sum + Number(r.amount), 0), [records])
+
+  const periodLabel =
+    range.preset === 'custom'
+      ? from && to
+        ? `${formatDate(from)} – ${formatDate(to)}`
+        : 'Custom range'
+      : PERIOD_LABELS[range.preset]
 
   async function handleDelete() {
     if (!deleteTarget) return
@@ -67,14 +90,25 @@ export default function Sales() {
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard label="This month" value={formatINR(totalThisMonth)} icon={IndianRupee} />
-        <StatCard label="All time" value={formatINR(totalAll)} icon={IndianRupee} tone="accent" />
+        <StatCard label={periodLabel} value={formatINR(periodTotal)} icon={IndianRupee} />
+        <StatCard label="All time" value={formatINR(allTimeTotal)} icon={IndianRupee} tone="accent" />
       </div>
+
+      <DateRangeFilter
+        preset={range.preset}
+        from={range.from}
+        to={range.to}
+        onChange={(patch) => setRange((r) => ({ ...r, ...patch }))}
+      />
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      {!loading && records.length === 0 ? (
-        <EmptyState icon={IndianRupee} title="No sales recorded yet" description="Log goat and milk sales to track farm revenue." />
+      {!loading && filtered.length === 0 ? (
+        <EmptyState
+          icon={IndianRupee}
+          title={records.length === 0 ? 'No sales recorded yet' : 'No sales in this period'}
+          description={records.length === 0 ? 'Log goat and milk sales to track farm revenue.' : 'Try a different date range.'}
+        />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-surface">
           <div className="overflow-x-auto">
@@ -90,7 +124,7 @@ export default function Sales() {
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => (
+                {filtered.map((r) => (
                   <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3 text-muted-foreground">{formatDate(r.sale_date)}</td>
                     <td className="px-4 py-3">

@@ -8,9 +8,13 @@ import Badge from '../components/Badge'
 import EmptyState from '../components/EmptyState'
 import ExpenseModal from '../components/ExpenseModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import DateRangeFilter from '../components/DateRangeFilter'
 import { formatDate, formatINR } from '../lib/format'
+import { getMonthRange, getYearRange } from '../lib/dateRanges'
 
 const CATEGORY_TONE = { Feed: 'green', Medical: 'red', Labor: 'amber', Equipment: 'gray', Transport: 'gray', Other: 'gray' }
+
+const PERIOD_LABELS = { month: 'This month', lastMonth: 'Last month', year: 'This year', all: 'All time' }
 
 export default function Expenses() {
   const { data: records, loading, error, refetch } = useSupabaseTable(
@@ -21,18 +25,37 @@ export default function Expenses() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [range, setRange] = useState({ preset: 'month', from: null, to: null })
 
-  const { totalAll, totalThisMonth } = useMemo(() => {
-    const now = new Date()
-    const thisMonth = records
-      .filter((r) => {
-        const d = new Date(r.expense_date)
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-      })
-      .reduce((sum, r) => sum + Number(r.amount), 0)
-    const all = records.reduce((sum, r) => sum + Number(r.amount), 0)
-    return { totalAll: all, totalThisMonth: thisMonth }
-  }, [records])
+  const { from, to } = useMemo(() => {
+    switch (range.preset) {
+      case 'month':
+        return getMonthRange(0)
+      case 'lastMonth':
+        return getMonthRange(-1)
+      case 'year':
+        return getYearRange()
+      case 'custom':
+        return { from: range.from, to: range.to }
+      default:
+        return { from: null, to: null }
+    }
+  }, [range])
+
+  const filtered = useMemo(() => {
+    if (!from || !to) return records
+    return records.filter((r) => r.expense_date >= from && r.expense_date <= to)
+  }, [records, from, to])
+
+  const periodTotal = useMemo(() => filtered.reduce((sum, r) => sum + Number(r.amount), 0), [filtered])
+  const allTimeTotal = useMemo(() => records.reduce((sum, r) => sum + Number(r.amount), 0), [records])
+
+  const periodLabel =
+    range.preset === 'custom'
+      ? from && to
+        ? `${formatDate(from)} – ${formatDate(to)}`
+        : 'Custom range'
+      : PERIOD_LABELS[range.preset]
 
   async function handleDelete() {
     if (!deleteTarget) return
@@ -62,14 +85,25 @@ export default function Expenses() {
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard label="This month" value={formatINR(totalThisMonth)} icon={Wallet} />
-        <StatCard label="All time" value={formatINR(totalAll)} icon={Wallet} tone="accent" />
+        <StatCard label={periodLabel} value={formatINR(periodTotal)} icon={Wallet} />
+        <StatCard label="All time" value={formatINR(allTimeTotal)} icon={Wallet} tone="accent" />
       </div>
+
+      <DateRangeFilter
+        preset={range.preset}
+        from={range.from}
+        to={range.to}
+        onChange={(patch) => setRange((r) => ({ ...r, ...patch }))}
+      />
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      {!loading && records.length === 0 ? (
-        <EmptyState icon={Wallet} title="No expenses logged yet" description="Track feed, medical, and other farm costs here." />
+      {!loading && filtered.length === 0 ? (
+        <EmptyState
+          icon={Wallet}
+          title={records.length === 0 ? 'No expenses logged yet' : 'No expenses in this period'}
+          description={records.length === 0 ? 'Track feed, medical, and other farm costs here.' : 'Try a different date range.'}
+        />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-surface">
           <div className="overflow-x-auto">
@@ -84,7 +118,7 @@ export default function Expenses() {
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => (
+                {filtered.map((r) => (
                   <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3 text-muted-foreground">{formatDate(r.expense_date)}</td>
                     <td className="px-4 py-3">

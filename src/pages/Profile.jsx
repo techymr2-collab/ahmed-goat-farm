@@ -144,6 +144,93 @@ export default function Profile() {
           </button>
         </div>
       </form>
+
+      <ChangePasswordCard />
     </div>
+  )
+}
+
+function ChangePasswordCard() {
+  const { user } = useAuth()
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError('')
+    setSaved(false)
+
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters.')
+      return
+    }
+
+    setSaving(true)
+
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: oldPassword,
+    })
+    if (verifyError) {
+      setSaving(false)
+      setError('Current password is incorrect.')
+      return
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+    setSaving(false)
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+    setOldPassword('')
+    setNewPassword('')
+    setSaved(true)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-6 rounded-2xl border border-border bg-surface p-6">
+      <h2 className="mb-1 font-heading text-base font-semibold text-foreground">Change password</h2>
+      <p className="mb-4 text-sm text-muted-foreground">Enter your current password and choose a new one.</p>
+
+      <div className="space-y-4">
+        <Field label="Current password" required>
+          <Input
+            type="password"
+            required
+            autoComplete="current-password"
+            value={oldPassword}
+            onChange={(e) => setOldPassword(e.target.value)}
+          />
+        </Field>
+        <Field label="New password" required>
+          <Input
+            type="password"
+            required
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="At least 6 characters"
+          />
+        </Field>
+      </div>
+
+      {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+      {saved && !error && <p className="mt-4 text-sm text-primary">Password updated.</p>}
+
+      <div className="mt-6 flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+        >
+          {saving ? 'Updating…' : 'Update password'}
+        </button>
+      </div>
+    </form>
   )
 }
