@@ -13,6 +13,7 @@ import {
   User as UserIcon,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import ConfirmDialog from './ConfirmDialog'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
 
 function SidebarContent({ onNavigate }) {
   const { user, profile, signOut } = useAuth()
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false)
 
   return (
     <div className="flex h-full flex-col">
@@ -88,13 +90,26 @@ function SidebarContent({ onNavigate }) {
         )}
         <button
           type="button"
-          onClick={() => signOut()}
+          onClick={() => setSignOutConfirmOpen(true)}
           className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-destructive"
         >
           <LogOut size={18} strokeWidth={2} aria-hidden="true" />
           Sign out
         </button>
       </div>
+
+      <ConfirmDialog
+        open={signOutConfirmOpen}
+        onClose={() => setSignOutConfirmOpen(false)}
+        onConfirm={() => {
+          setSignOutConfirmOpen(false)
+          signOut()
+        }}
+        title="Sign out?"
+        description="You'll need to sign in again to access the dashboard."
+        confirmLabel="Sign out"
+        danger={false}
+      />
     </div>
   )
 }
