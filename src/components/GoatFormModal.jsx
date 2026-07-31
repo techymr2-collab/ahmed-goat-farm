@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { PawPrint } from 'lucide-react'
 import Modal from './Modal'
 import { Field, Input, Select, Textarea } from './FormField'
+import GoatCombobox from './GoatCombobox'
 import { supabase } from '../lib/supabaseClient'
 
 const emptyForm = {
@@ -198,24 +199,20 @@ export default function GoatFormModal({ open, onClose, onSaved, goat, allGoats }
             <Input value={form.color} onChange={(e) => update('color', e.target.value)} />
           </Field>
           <Field label="Mother">
-            <Select value={form.mother_id} onChange={(e) => update('mother_id', e.target.value)}>
-              <option value="">— Unknown / external —</option>
-              {mothers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.tag_id} {m.name ? `· ${m.name}` : ''}
-                </option>
-              ))}
-            </Select>
+            <GoatCombobox
+              goats={mothers}
+              value={form.mother_id}
+              onChange={(id) => update('mother_id', id)}
+              nullLabel="— Unknown / external —"
+            />
           </Field>
           <Field label="Father">
-            <Select value={form.father_id} onChange={(e) => update('father_id', e.target.value)}>
-              <option value="">— Unknown / external —</option>
-              {fathers.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.tag_id} {f.name ? `· ${f.name}` : ''}
-                </option>
-              ))}
-            </Select>
+            <GoatCombobox
+              goats={fathers}
+              value={form.father_id}
+              onChange={(id) => update('father_id', id)}
+              nullLabel="— Unknown / external —"
+            />
           </Field>
           <Field label="Status" required>
             <Select required value={form.status} onChange={(e) => update('status', e.target.value)}>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Modal from './Modal'
 import { Field, Input, Select, Textarea } from './FormField'
+import GoatCombobox from './GoatCombobox'
 import { supabase } from '../lib/supabaseClient'
 
 const emptyForm = {
@@ -66,6 +67,10 @@ export default function BreedingRecordModal({ open, onClose, onSaved, record, go
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (!form.doe_id) {
+      setError('Select a doe.')
+      return
+    }
     setSaving(true)
     setError('')
 
@@ -94,26 +99,23 @@ export default function BreedingRecordModal({ open, onClose, onSaved, record, go
     <Modal open={open} onClose={onClose} title={record ? 'Edit breeding record' : 'Add breeding record'} maxWidth="max-w-lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="Doe (mother)" required>
-          <Select required disabled={Boolean(lockDoeId)} value={form.doe_id} onChange={(e) => update('doe_id', e.target.value)}>
-            <option value="">Select a doe…</option>
-            {does.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.tag_id} {g.name ? `· ${g.name}` : ''}
-              </option>
-            ))}
-          </Select>
+          <GoatCombobox
+            goats={does}
+            value={form.doe_id}
+            onChange={(id) => update('doe_id', id)}
+            placeholder="Select a doe…"
+            disabled={Boolean(lockDoeId)}
+          />
         </Field>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Buck (on farm)">
-            <Select value={form.buck_id} onChange={(e) => update('buck_id', e.target.value)}>
-              <option value="">— External / unknown —</option>
-              {bucks.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.tag_id} {g.name ? `· ${g.name}` : ''}
-                </option>
-              ))}
-            </Select>
+            <GoatCombobox
+              goats={bucks}
+              value={form.buck_id}
+              onChange={(id) => update('buck_id', id)}
+              nullLabel="— External / unknown —"
+            />
           </Field>
           <Field label="Buck name (if external)">
             <Input value={form.buck_name} onChange={(e) => update('buck_name', e.target.value)} placeholder="Optional" />

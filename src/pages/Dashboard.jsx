@@ -8,11 +8,37 @@ import StatCard from '../components/StatCard'
 import Badge from '../components/Badge'
 import EmptyState from '../components/EmptyState'
 import { formatDate, formatINR, daysUntil } from '../lib/format'
+import { getMonthRange } from '../lib/dateRanges'
+
+const HEALTH_WINDOW_START_DAYS = -3
+const HEALTH_WINDOW_END_DAYS = 14
+const KIDDING_WINDOW_START_DAYS = -7
+
+function isoDateOffset(days) {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
 
 export default function Dashboard() {
-  const { data: goats, loading: goatsLoading } = useSupabaseTable(() => supabase.from('goats').select('*'), [])
+  const { count: totalGoats, loading: totalLoading } = useSupabaseTable(
+    () => supabase.from('goats').select('id', { count: 'exact', head: true }),
+    []
+  )
+  const { count: activeGoatCount, loading: activeLoading } = useSupabaseTable(
+    () => supabase.from('goats').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
+    []
+  )
+
   const { data: healthRecords } = useSupabaseTable(
-    () => supabase.from('health_records').select('*, goats(tag_id, name)').not('next_due_date', 'is', null),
+    () =>
+      supabase
+        .from('health_records')
+        .select('*, goats(tag_id, name)')
+        .gte('next_due_date', isoDateOffset(HEALTH_WINDOW_START_DAYS))
+        .lte('next_due_date', isoDateOffset(HEALTH_WINDOW_END_DAYS))
+        .order('next_due_date', { ascending: true })
+        .limit(5),
     []
   )
   const { data: breedingRecords } = useSupabaseTable(
@@ -20,52 +46,49 @@ export default function Dashboard() {
       supabase
         .from('breeding_records')
         .select('*, doe:goats!breeding_records_doe_id_fkey(tag_id, name)')
-        .is('actual_kidding_date', null),
+        .is('actual_kidding_date', null)
+        .gte('expected_kidding_date', isoDateOffset(KIDDING_WINDOW_START_DAYS))
+        .order('expected_kidding_date', { ascending: true })
+        .limit(5),
     []
   )
-  const { data: expenses } = useSupabaseTable(() => supabase.from('expenses').select('*'), [])
-  const { data: sales } = useSupabaseTable(() => supabase.from('sales').select('*'), [])
 
-  const activeGoats = useMemo(() => goats.filter((g) => g.status === 'Active'), [goats])
+  const { from: monthFrom, to: monthTo } = useMemo(() => getMonthRange(0), [])
+  const { data: monthExpenses } = useSupabaseTable(
+    () => supabase.from('expenses').select('amount').gte('expense_date', monthFrom).lte('expense_date', monthTo),
+    [monthFrom, monthTo]
+  )
+  const { data: monthSales } = useSupabaseTable(
+    () => supabase.from('sales').select('amount').gte('sale_date', monthFrom).lte('sale_date', monthTo),
+    [monthFrom, monthTo]
+  )
 
   const upcomingHealth = useMemo(
-    () =>
-      healthRecords
-        .map((r) => ({ ...r, days: daysUntil(r.next_due_date) }))
-        .filter((r) => r.days !== null && r.days >= -3 && r.days <= 14)
-        .sort((a, b) => a.days - b.days)
-        .slice(0, 5),
+    () => healthRecords.map((r) => ({ ...r, days: daysUntil(r.next_due_date) })),
     [healthRecords]
   )
 
   const upcomingKidding = useMemo(
-    () =>
-      breedingRecords
-        .map((r) => ({ ...r, days: daysUntil(r.expected_kidding_date) }))
-        .filter((r) => r.days !== null && r.days >= -7)
-        .sort((a, b) => a.days - b.days)
-        .slice(0, 5),
+    () => breedingRecords.map((r) => ({ ...r, days: daysUntil(r.expected_kidding_date) })),
     [breedingRecords]
   )
 
-  const { monthlyExpense, monthlySales } = useMemo(() => {
-    const now = new Date()
-    const inMonth = (dateStr) => {
-      const d = new Date(dateStr)
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-    }
-    return {
-      monthlyExpense: expenses.filter((e) => inMonth(e.expense_date)).reduce((s, e) => s + Number(e.amount), 0),
-      monthlySales: sales.filter((s) => inMonth(s.sale_date)).reduce((s, r) => s + Number(r.amount), 0),
-    }
-  }, [expenses, sales])
+  const monthlyExpense = useMemo(() => monthExpenses.reduce((s, e) => s + Number(e.amount), 0), [monthExpenses])
+  const monthlySales = useMemo(() => monthSales.reduce((s, r) => s + Number(r.amount), 0), [monthSales])
+
+  const goatsLoading = totalLoading || activeLoading
 
   return (
     <div>
       <PageHeader title="Dashboard" description="Overview of your herd, health, and finances." />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Active goats" value={goatsLoading ? '—' : activeGoats.length} icon={PawPrint} hint={`${goats.length} total in registry`} />
+        <StatCard
+          label="Active goats"
+          value={goatsLoading ? '—' : activeGoatCount ?? 0}
+          icon={PawPrint}
+          hint={`${totalGoats ?? 0} total in registry`}
+        />
         <StatCard label="Due soon" value={upcomingHealth.length} icon={Syringe} hint="Vaccinations & deworming" tone="accent" />
         <StatCard label="Expected kiddings" value={upcomingKidding.length} icon={HeartHandshake} hint="Next 7+ days" />
         <StatCard

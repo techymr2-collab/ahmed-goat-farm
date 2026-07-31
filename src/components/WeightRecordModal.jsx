@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Modal from './Modal'
-import { Field, Input, Select, Textarea } from './FormField'
+import { Field, Input, Textarea } from './FormField'
+import GoatCombobox from './GoatCombobox'
 import { supabase } from '../lib/supabaseClient'
 
 const emptyForm = {
@@ -37,6 +38,10 @@ export default function WeightRecordModal({ open, onClose, onSaved, record, goat
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (!form.goat_id) {
+      setError('Select a goat.')
+      return
+    }
     setSaving(true)
     setError('')
 
@@ -58,14 +63,12 @@ export default function WeightRecordModal({ open, onClose, onSaved, record, goat
     <Modal open={open} onClose={onClose} title={record ? 'Edit weight record' : 'Add weight record'} maxWidth="max-w-md">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="Goat" required>
-          <Select required disabled={Boolean(lockGoatId)} value={form.goat_id} onChange={(e) => update('goat_id', e.target.value)}>
-            <option value="">Select a goat…</option>
-            {goats.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.tag_id} {g.name ? `· ${g.name}` : ''}
-              </option>
-            ))}
-          </Select>
+          <GoatCombobox
+            goats={goats}
+            value={form.goat_id}
+            onChange={(id) => update('goat_id', id)}
+            disabled={Boolean(lockGoatId)}
+          />
         </Field>
 
         <div className="grid grid-cols-2 gap-4">

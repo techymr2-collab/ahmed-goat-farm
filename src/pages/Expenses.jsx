@@ -17,11 +17,6 @@ const CATEGORY_TONE = { Feed: 'green', Medical: 'red', Labor: 'amber', Equipment
 const PERIOD_LABELS = { month: 'This month', lastMonth: 'Last month', year: 'This year', all: 'All time' }
 
 export default function Expenses() {
-  const { data: records, loading, error, refetch } = useSupabaseTable(
-    () => supabase.from('expenses').select('*').order('expense_date', { ascending: false }),
-    []
-  )
-
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -42,13 +37,20 @@ export default function Expenses() {
     }
   }, [range])
 
-  const filtered = useMemo(() => {
-    if (!from || !to) return records
-    return records.filter((r) => r.expense_date >= from && r.expense_date <= to)
-  }, [records, from, to])
+  // Filtered server-side by the selected range, so history doesn't have to be
+  // pulled in full just to show one month of records.
+  const { data: records, loading, error, refetch } = useSupabaseTable(() => {
+    let query = supabase.from('expenses').select('*').order('expense_date', { ascending: false })
+    if (from && to) query = query.gte('expense_date', from).lte('expense_date', to)
+    return query
+  }, [from, to])
 
-  const periodTotal = useMemo(() => filtered.reduce((sum, r) => sum + Number(r.amount), 0), [filtered])
-  const allTimeTotal = useMemo(() => records.reduce((sum, r) => sum + Number(r.amount), 0), [records])
+  // Lightweight amount-only fetch so the "All time" figure stays cheap
+  // regardless of how much history has piled up.
+  const { data: allTimeAmounts } = useSupabaseTable(() => supabase.from('expenses').select('amount'), [])
+
+  const periodTotal = useMemo(() => records.reduce((sum, r) => sum + Number(r.amount), 0), [records])
+  const allTimeTotal = useMemo(() => allTimeAmounts.reduce((sum, r) => sum + Number(r.amount), 0), [allTimeAmounts])
 
   const periodLabel =
     range.preset === 'custom'
@@ -98,11 +100,11 @@ export default function Expenses() {
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      {!loading && filtered.length === 0 ? (
+      {!loading && records.length === 0 ? (
         <EmptyState
           icon={Wallet}
-          title={records.length === 0 ? 'No expenses logged yet' : 'No expenses in this period'}
-          description={records.length === 0 ? 'Track feed, medical, and other farm costs here.' : 'Try a different date range.'}
+          title={allTimeAmounts.length === 0 ? 'No expenses logged yet' : 'No expenses in this period'}
+          description={allTimeAmounts.length === 0 ? 'Track feed, medical, and other farm costs here.' : 'Try a different date range.'}
         />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-surface">
@@ -118,7 +120,7 @@ export default function Expenses() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {records.map((r) => (
                   <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3 text-muted-foreground">{formatDate(r.expense_date)}</td>
                     <td className="px-4 py-3">

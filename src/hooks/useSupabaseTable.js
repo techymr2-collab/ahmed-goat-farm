@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react'
  */
 export function useSupabaseTable(queryFn, deps = []) {
   const [data, setData] = useState([])
+  const [count, setCount] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -15,9 +16,12 @@ export function useSupabaseTable(queryFn, deps = []) {
     setLoading(true)
     setError(null)
     try {
-      const { data, error } = await queryFn()
+      const { data, count, error } = await queryFn()
       if (error) setError(error.message)
-      else setData(data ?? [])
+      else {
+        setData(data ?? [])
+        setCount(count ?? null)
+      }
     } catch (err) {
       setError(err.message)
     }
@@ -28,5 +32,5 @@ export function useSupabaseTable(queryFn, deps = []) {
     refetch()
   }, [refetch])
 
-  return { data, loading, error, refetch }
+  return { data, count, loading, error, refetch }
 }

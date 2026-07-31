@@ -8,9 +8,11 @@ import Badge from '../components/Badge'
 import EmptyState from '../components/EmptyState'
 import GoatFormModal from '../components/GoatFormModal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import Pagination from '../components/Pagination'
 import { ageFromDOB } from '../lib/format'
 
 const STATUS_TONE = { Active: 'green', Sold: 'amber', Deceased: 'gray' }
+const PAGE_SIZE = 25
 
 export default function Goats() {
   const { data: goats, loading, error, refetch } = useSupabaseTable(
@@ -23,6 +25,7 @@ export default function Goats() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoat, setEditingGoat] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [page, setPage] = useState(1)
 
   const filtered = useMemo(() => {
     return goats.filter((g) => {
@@ -36,6 +39,20 @@ export default function Goats() {
       )
     })
   }, [goats, search, statusFilter])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  function updateSearch(value) {
+    setSearch(value)
+    setPage(1)
+  }
+
+  function updateStatusFilter(value) {
+    setStatusFilter(value)
+    setPage(1)
+  }
 
   function openAdd() {
     setEditingGoat(null)
@@ -76,7 +93,7 @@ export default function Goats() {
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => updateSearch(e.target.value)}
             placeholder="Search by tag, name, breed…"
             className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
@@ -86,7 +103,7 @@ export default function Goats() {
             <button
               key={s}
               type="button"
-              onClick={() => setStatusFilter(s)}
+              onClick={() => updateStatusFilter(s)}
               className={`cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                 statusFilter === s ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:text-foreground'
               }`}
@@ -127,7 +144,7 @@ export default function Goats() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((g) => (
+                {paged.map((g) => (
                   <tr key={g.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -179,6 +196,14 @@ export default function Goats() {
           </div>
         </div>
       )}
+
+      <Pagination
+        page={currentPage}
+        pageCount={pageCount}
+        onPageChange={setPage}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+      />
 
       <GoatFormModal
         open={modalOpen}

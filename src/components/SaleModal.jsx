@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Modal from './Modal'
 import { Field, Input, Select, Textarea } from './FormField'
+import GoatCombobox from './GoatCombobox'
 import { supabase } from '../lib/supabaseClient'
 
 const emptyForm = {
@@ -84,14 +85,7 @@ export default function SaleModal({ open, onClose, onSaved, record, goats }) {
 
           {form.sale_type === 'Goat' && (
             <Field label="Goat sold">
-              <Select value={form.goat_id} onChange={(e) => update('goat_id', e.target.value)}>
-                <option value="">Select a goat…</option>
-                {goats.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.tag_id} {g.name ? `· ${g.name}` : ''}
-                  </option>
-                ))}
-              </Select>
+              <GoatCombobox goats={goats} value={form.goat_id} onChange={(id) => update('goat_id', id)} />
             </Field>
           )}
 
