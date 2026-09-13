@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const UPGRADE_HINT = 'Database update needed — run supabase/upgrade_v2.sql in the Supabase SQL Editor.'
+const UPGRADE_HINT =
+  'Database update needed — run supabase/upgrade_v2.sql and supabase/upgrade_v3.sql in the Supabase SQL Editor.'
 
 /** Turn raw Supabase/PostgREST errors into something a farm user can act on. */
 export function friendlyError(error) {

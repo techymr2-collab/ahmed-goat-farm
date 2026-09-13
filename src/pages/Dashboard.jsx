@@ -190,6 +190,8 @@ export default function Dashboard() {
           >
             {finance.loading ? (
               <Skeleton className="h-64 w-full" />
+            ) : financeSeries.every((m) => m.income === 0 && m.expense === 0) ? (
+              <EmptyState icon={TrendingUp} title="No income or expenses yet" description="Sales and expenses from the last 6 months will be charted here." />
             ) : (
               <div className="h-64 w-full" role="img" aria-label={`Income and expenses for the last 6 months. This month: income ${formatINR(thisMonth.income)}, expenses ${formatINR(thisMonth.expense)}.`}>
                 <ResponsiveContainer width="100%" height="100%">

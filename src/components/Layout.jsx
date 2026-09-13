@@ -17,6 +17,8 @@ import {
 import { useAuth } from '../context/AuthContext'
 import ConfirmDialog from './ConfirmDialog'
 import Brand, { FARM_NAME } from './Brand'
+import NotificationBell from './NotificationBell'
+import { NotificationsProvider } from '../context/NotificationsContext'
 
 const NAV_GROUPS = [
   { items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true }] },
@@ -139,6 +141,7 @@ export default function Layout() {
   }, [location.pathname])
 
   return (
+    <NotificationsProvider>
     <div className="flex min-h-dvh bg-background">
       <a
         href="#main-content"
@@ -161,16 +164,19 @@ export default function Layout() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur lg:hidden">
+        <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-surface/95 px-4 py-2.5 backdrop-blur sm:px-6 lg:px-8">
           <button
             type="button"
             aria-label="Open menu"
             onClick={() => setMobileOpen(true)}
-            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-foreground hover:bg-muted"
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-foreground hover:bg-muted lg:hidden"
           >
             <Menu size={20} aria-hidden="true" />
           </button>
-          <span className="truncate font-heading text-sm font-semibold text-foreground">{FARM_NAME}</span>
+          <span className="truncate font-heading text-sm font-semibold text-foreground lg:hidden">{FARM_NAME}</span>
+          <div className="ml-auto">
+            <NotificationBell />
+          </div>
         </header>
 
         <main id="main-content" tabIndex={-1} className="flex-1 p-4 outline-none sm:p-6 lg:p-8">
@@ -180,5 +186,6 @@ export default function Layout() {
         </main>
       </div>
     </div>
+    </NotificationsProvider>
   )
 }

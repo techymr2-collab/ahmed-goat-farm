@@ -14,6 +14,7 @@ Built with React + Vite + Tailwind CSS, backed by Supabase (Postgres, auth, stor
 - **Milk Production** — record a whole milking session (morning/evening) for all does on one screen; daily totals, per-doe ranking.
 - **Expenses & Sales** — date-range filters, category/type breakdowns; recording a goat sale can mark the goat as sold.
 - **Reports** — profit & loss by month for any period, expense and income breakdowns, herd summary, print, and CSV downloads of every record type.
+- **Notifications** — a bell in the header for vaccinations/treatments due within 7 days or overdue, kiddings due within 14 days, and active goats not weighed in 60 days. Alerts clear themselves once the record is updated; each user can dismiss them.
 
 ## 1. Create a Supabase project
 
@@ -33,8 +34,9 @@ In your Supabase project open **SQL Editor → New query**, then paste and **Run
 | [`storage_setup.sql`](supabase/storage_setup.sql) | `goat-photos` storage bucket |
 | [`profiles_setup.sql`](supabase/profiles_setup.sql) | User profiles (name + photo) and the `avatars` bucket |
 | [`upgrade_v2.sql`](supabase/upgrade_v2.sql) | Milk production table, reporting functions, and performance indexes |
+| [`upgrade_v3.sql`](supabase/upgrade_v3.sql) | Notifications feed and per-user dismissals |
 
-`storage_setup.sql`, `profiles_setup.sql` and `upgrade_v2.sql` are safe to run again. If a page shows *"Database update needed"*, run `upgrade_v2.sql`.
+`storage_setup.sql`, `profiles_setup.sql`, `upgrade_v2.sql` and `upgrade_v3.sql` are safe to run again. If a page shows *"Database update needed"*, run the upgrade files.
 
 ## 3. Add your API keys
 
