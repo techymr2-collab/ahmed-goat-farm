@@ -1,4 +1,4 @@
--- Ahmed Goat Farm — storage setup for goat photos
+-- Bharat Goat Farm (Geedgarh) — storage setup for goat photos
 -- Safe to run more than once.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

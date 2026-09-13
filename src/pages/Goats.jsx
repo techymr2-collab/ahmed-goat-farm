@@ -1,57 +1,69 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, PawPrint, Search, Pencil, Trash2 } from 'lucide-react'
+import { Plus, PawPrint, Search } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
+import { usePagedQuery } from '../hooks/usePagedQuery'
+import { useGoatOptions } from '../hooks/useGoatOptions'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { useNewParam } from '../hooks/useNewParam'
+import { useToast } from '../context/ToastContext'
 import PageHeader from '../components/PageHeader'
 import Badge from '../components/Badge'
+import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
+import DataTable, { RowActions } from '../components/DataTable'
+import FilterChips from '../components/FilterChips'
+import ExportButton from '../components/ExportButton'
 import GoatFormModal from '../components/GoatFormModal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import Pagination from '../components/Pagination'
+import { STATUS_TONE } from '../components/RecordBadges'
 import { ageFromDOB } from '../lib/format'
+import { exporters } from '../lib/exports'
 
-const STATUS_TONE = { Active: 'green', Sold: 'amber', Deceased: 'gray' }
-const PAGE_SIZE = 25
+const STATUSES = ['Active', 'Sold', 'Deceased', 'All']
+
+// Strip characters that have meaning inside a PostgREST or() filter.
+const sanitize = (text) => text.replace(/[,()%*\\]/g, ' ').trim()
 
 export default function Goats() {
-  const { data: goats, loading, error, refetch } = useSupabaseTable(
-    () => supabase.from('goats').select('*').order('tag_id', { ascending: true }),
-    []
-  )
-
+  const toast = useToast()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('Active')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoat, setEditingGoat] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [page, setPage] = useState(1)
+  const debouncedSearch = sanitize(useDebouncedValue(search))
 
-  const filtered = useMemo(() => {
-    return goats.filter((g) => {
-      if (statusFilter !== 'All' && g.status !== statusFilter) return false
-      if (!search.trim()) return true
-      const q = search.toLowerCase()
-      return (
-        g.tag_id?.toLowerCase().includes(q) ||
-        g.name?.toLowerCase().includes(q) ||
-        g.breed?.toLowerCase().includes(q)
-      )
-    })
-  }, [goats, search, statusFilter])
+  const { goats: allGoats, refetch: refetchOptions } = useGoatOptions()
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const currentPage = Math.min(page, pageCount)
-  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const statusCounts = useSupabaseTable(async () => {
+    const results = await Promise.all(
+      ['Active', 'Sold', 'Deceased'].map((s) => supabase.from('goats').select('id', { count: 'exact', head: true }).eq('status', s))
+    )
+    const failed = results.find((r) => r.error)
+    if (failed) return failed
+    const counts = Object.fromEntries(results.map((r, i) => [['Active', 'Sold', 'Deceased'][i], r.count ?? 0]))
+    return { data: [{ ...counts, All: counts.Active + counts.Sold + counts.Deceased }], error: null }
+  }, [])
+  const counts = statusCounts.data[0] ?? {}
 
-  function updateSearch(value) {
-    setSearch(value)
-    setPage(1)
-  }
+  const goats = usePagedQuery(() => {
+    let query = supabase.from('goats').select('*', { count: 'exact' }).order('tag_id', { ascending: true })
+    if (statusFilter !== 'All') query = query.eq('status', statusFilter)
+    if (debouncedSearch) {
+      const q = `%${debouncedSearch}%`
+      query = query.or(`tag_id.ilike.${q},name.ilike.${q},breed.ilike.${q},color.ilike.${q}`)
+    }
+    return query
+  }, [statusFilter, debouncedSearch])
 
-  function updateStatusFilter(value) {
-    setStatusFilter(value)
-    setPage(1)
+  useNewParam(() => openAdd())
+
+  function refreshAll() {
+    goats.refetch()
+    statusCounts.refetch()
+    refetchOptions()
   }
 
   function openAdd() {
@@ -59,17 +71,21 @@ export default function Goats() {
     setModalOpen(true)
   }
 
-  function openEdit(goat) {
-    setEditingGoat(goat)
-    setModalOpen(true)
-  }
-
   async function handleDelete() {
     if (!deleteTarget) return
-    await supabase.from('goats').delete().eq('id', deleteTarget.id)
+    const target = deleteTarget
     setDeleteTarget(null)
-    refetch()
+    const { error } = await supabase.from('goats').delete().eq('id', target.id)
+    if (error) {
+      toast.error(`Couldn't delete ${target.tag_id}: ${error.message}`)
+      return
+    }
+    toast.success(`${target.tag_id} deleted.`)
+    refreshAll()
   }
+
+  const hasFilters = Boolean(debouncedSearch) || statusFilter !== 'All'
+  const registryEmpty = counts.All === 0
 
   return (
     <div>
@@ -77,142 +93,103 @@ export default function Goats() {
         title="Goats"
         description="Herd registry — profiles, lineage, and status."
         action={
-          <button
-            type="button"
-            onClick={openAdd}
-            className="flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark"
-          >
-            <Plus size={16} aria-hidden="true" />
-            Add goat
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <ExportButton load={exporters.goats.load} onExport={exporters.goats.save} />
+            <Button icon={Plus} onClick={openAdd}>
+              Add goat
+            </Button>
+          </div>
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative w-full max-w-xs">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-xs">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input
+            type="search"
             value={search}
-            onChange={(e) => updateSearch(e.target.value)}
-            placeholder="Search by tag, name, breed…"
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tag, name, breed, colour…"
+            aria-label="Search goats"
             className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
           />
         </div>
-        <div className="flex gap-1.5">
-          {['Active', 'Sold', 'Deceased', 'All'].map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => updateStatusFilter(s)}
-              className={`cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                statusFilter === s ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        <FilterChips
+          label="Filter by status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={STATUSES.map((s) => ({ value: s, label: s, count: counts[s] }))}
+        />
       </div>
 
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+      {goats.error && <p className="mb-4 text-sm text-destructive">{goats.error}</p>}
 
-      {!loading && filtered.length === 0 ? (
-        <EmptyState
-          icon={PawPrint}
-          title={goats.length === 0 ? 'No goats yet' : 'No goats match your filters'}
-          description={goats.length === 0 ? 'Add your first goat to start building the herd registry.' : 'Try a different search or status filter.'}
-          action={
-            goats.length === 0 && (
-              <button type="button" onClick={openAdd} className="cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark">
-                Add goat
-              </button>
-            )
-          }
-        />
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Tag / Name</th>
-                  <th className="px-4 py-3 font-medium">Breed</th>
-                  <th className="px-4 py-3 font-medium">Sex</th>
-                  <th className="px-4 py-3 font-medium">Age</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paged.map((g) => (
-                  <tr key={g.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted">
-                          {g.photo_url ? (
-                            <img src={g.photo_url} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <PawPrint size={14} className="text-muted-foreground" aria-hidden="true" />
-                          )}
-                        </div>
-                        <div>
-                          <Link to={`/goats/${g.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
-                            {g.tag_id}
-                          </Link>
-                          {g.name && <span className="ml-1.5 text-muted-foreground">· {g.name}</span>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{g.breed || '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{g.sex}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{ageFromDOB(g.date_of_birth)}</td>
-                    <td className="px-4 py-3">
-                      <Badge tone={STATUS_TONE[g.status] ?? 'gray'}>{g.status}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          aria-label={`Edit ${g.tag_id}`}
-                          onClick={() => openEdit(g)}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                          <Pencil size={15} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${g.tag_id}`}
-                          onClick={() => setDeleteTarget(g)}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 size={15} aria-hidden="true" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <Pagination
-        page={currentPage}
-        pageCount={pageCount}
-        onPageChange={setPage}
-        totalItems={filtered.length}
-        pageSize={PAGE_SIZE}
+      <DataTable
+        rows={goats.data}
+        loading={goats.loading}
+        totalCount={goats.count}
+        page={goats.page}
+        onPageChange={goats.setPage}
+        minWidth={680}
+        empty={
+          <EmptyState
+            icon={PawPrint}
+            title={registryEmpty ? 'No goats yet' : 'No goats match'}
+            description={registryEmpty ? 'Add your first goat to start the herd registry.' : hasFilters ? 'Try a different search or status.' : ''}
+            action={
+              registryEmpty && (
+                <Button icon={Plus} onClick={openAdd}>
+                  Add goat
+                </Button>
+              )
+            }
+          />
+        }
+        columns={[
+          {
+            header: 'Goat',
+            cell: (g) => (
+              <Link to={`/goats/${g.id}`} className="group flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted">
+                  {g.photo_url ? (
+                    <img src={g.photo_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  ) : (
+                    <PawPrint size={15} className="text-muted-foreground" aria-hidden="true" />
+                  )}
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-medium text-foreground group-hover:text-primary group-hover:underline">{g.tag_id}</span>
+                  {g.name && <span className="block truncate text-xs text-muted-foreground">{g.name}</span>}
+                </span>
+              </Link>
+            ),
+          },
+          { header: 'Breed', cell: (g) => g.breed || '—' },
+          { header: 'Sex', cell: (g) => g.sex },
+          { header: 'Age', cell: (g) => ageFromDOB(g.date_of_birth) },
+          { header: 'Status', cell: (g) => <Badge tone={STATUS_TONE[g.status] ?? 'gray'}>{g.status}</Badge> },
+        ]}
+        actions={(g) => (
+          <RowActions
+            label={g.tag_id}
+            onEdit={() => {
+              setEditingGoat(g)
+              setModalOpen(true)
+            }}
+            onDelete={() => setDeleteTarget(g)}
+          />
+        )}
       />
 
       <GoatFormModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         goat={editingGoat}
-        allGoats={goats}
+        allGoats={allGoats}
         onSaved={() => {
           setModalOpen(false)
-          refetch()
+          toast.success(editingGoat ? `${editingGoat.tag_id} updated.` : 'Goat added.')
+          refreshAll()
         }}
       />
 
@@ -220,8 +197,8 @@ export default function Goats() {
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        title="Delete goat?"
-        description={`This will permanently delete ${deleteTarget?.tag_id} and all of its health, breeding, and weight records.`}
+        title={`Delete ${deleteTarget?.tag_id}?`}
+        description="This permanently deletes the goat and all of its health, breeding, weight and milk records. Consider marking it Sold or Deceased instead."
       />
     </div>
   )

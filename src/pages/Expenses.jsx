@@ -1,163 +1,150 @@
 import { useMemo, useState } from 'react'
-import { Plus, Wallet, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Wallet } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
+import { usePagedQuery } from '../hooks/usePagedQuery'
+import { useNewParam } from '../hooks/useNewParam'
+import { useToast } from '../context/ToastContext'
 import PageHeader from '../components/PageHeader'
 import StatCard from '../components/StatCard'
 import Badge from '../components/Badge'
+import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
+import DataTable, { RowActions } from '../components/DataTable'
+import DateRangeFilter from '../components/DateRangeFilter'
+import FilterChips from '../components/FilterChips'
+import ExportButton from '../components/ExportButton'
+import BreakdownList from '../components/BreakdownList'
 import ExpenseModal from '../components/ExpenseModal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import DateRangeFilter from '../components/DateRangeFilter'
+import { ChartCard } from '../components/charts'
+import { Skeleton } from '../components/Skeleton'
 import { formatDate, formatINR } from '../lib/format'
-import { getMonthRange, getYearRange } from '../lib/dateRanges'
+import { resolveRange, periodLabel } from '../lib/dateRanges'
+import { exporters } from '../lib/exports'
 
 const CATEGORY_TONE = { Feed: 'green', Medical: 'red', Labor: 'amber', Equipment: 'gray', Transport: 'gray', Other: 'gray' }
-
-const PERIOD_LABELS = { month: 'This month', lastMonth: 'Last month', year: 'This year', all: 'All time' }
+const CATEGORIES = ['All', 'Feed', 'Medical', 'Labor', 'Equipment', 'Transport', 'Other']
 
 export default function Expenses() {
+  const toast = useToast()
+  const [range, setRange] = useState({ preset: 'month', from: null, to: null })
+  const [category, setCategory] = useState('All')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [range, setRange] = useState({ preset: 'month', from: null, to: null })
+  const { from, to } = useMemo(() => resolveRange(range), [range])
 
-  const { from, to } = useMemo(() => {
-    switch (range.preset) {
-      case 'month':
-        return getMonthRange(0)
-      case 'lastMonth':
-        return getMonthRange(-1)
-      case 'year':
-        return getYearRange()
-      case 'custom':
-        return { from: range.from, to: range.to }
-      default:
-        return { from: null, to: null }
-    }
-  }, [range])
+  const breakdown = useSupabaseTable(() => supabase.rpc('expense_by_category', { p_from: from, p_to: to }), [from, to])
+  const allTime = useSupabaseTable(() => supabase.rpc('expense_by_category', { p_from: null, p_to: null }), [])
 
-  // Filtered server-side by the selected range, so history doesn't have to be
-  // pulled in full just to show one month of records.
-  const { data: records, loading, error, refetch } = useSupabaseTable(() => {
-    let query = supabase.from('expenses').select('*').order('expense_date', { ascending: false })
+  const records = usePagedQuery(() => {
+    let query = supabase.from('expenses').select('*', { count: 'exact' })
     if (from && to) query = query.gte('expense_date', from).lte('expense_date', to)
-    return query
-  }, [from, to])
+    if (category !== 'All') query = query.eq('category', category)
+    return query.order('expense_date', { ascending: false }).order('created_at', { ascending: false })
+  }, [from, to, category])
 
-  // Lightweight amount-only fetch so the "All time" figure stays cheap
-  // regardless of how much history has piled up.
-  const { data: allTimeAmounts } = useSupabaseTable(() => supabase.from('expenses').select('amount'), [])
+  useNewParam(() => {
+    setEditing(null)
+    setModalOpen(true)
+  })
 
-  const periodTotal = useMemo(() => records.reduce((sum, r) => sum + Number(r.amount), 0), [records])
-  const allTimeTotal = useMemo(() => allTimeAmounts.reduce((sum, r) => sum + Number(r.amount), 0), [allTimeAmounts])
+  const rows = breakdown.data.map((r) => ({ label: r.category, total: Number(r.total), hint: `${r.entries} entr${Number(r.entries) === 1 ? 'y' : 'ies'}` }))
+  const periodTotal = rows.reduce((s, r) => s + r.total, 0)
+  const allTimeTotal = allTime.data.reduce((s, r) => s + Number(r.total), 0)
+  const biggest = rows[0]
 
-  const periodLabel =
-    range.preset === 'custom'
-      ? from && to
-        ? `${formatDate(from)} – ${formatDate(to)}`
-        : 'Custom range'
-      : PERIOD_LABELS[range.preset]
+  function refresh() {
+    records.refetch()
+    breakdown.refetch()
+    allTime.refetch()
+  }
 
   async function handleDelete() {
-    if (!deleteTarget) return
-    await supabase.from('expenses').delete().eq('id', deleteTarget.id)
+    const target = deleteTarget
     setDeleteTarget(null)
-    refetch()
+    const { error } = await supabase.from('expenses').delete().eq('id', target.id)
+    if (error) return toast.error(`Couldn't delete: ${error.message}`)
+    toast.success('Expense deleted.')
+    refresh()
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         title="Expenses"
-        description="Feed, medical, labor, and other farm costs."
+        description="Feed, medical, labour, and other farm costs."
         action={
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(null)
-              setModalOpen(true)
-            }}
-            className="flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark"
-          >
-            <Plus size={16} aria-hidden="true" />
-            Add expense
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <ExportButton load={() => exporters.expenses.load(from, to)} onExport={(r) => exporters.expenses.save(r, from, to)} />
+            <Button
+              icon={Plus}
+              onClick={() => {
+                setEditing(null)
+                setModalOpen(true)
+              }}
+            >
+              Add expense
+            </Button>
+          </div>
         }
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard label={periodLabel} value={formatINR(periodTotal)} icon={Wallet} />
-        <StatCard label="All time" value={formatINR(allTimeTotal)} icon={Wallet} tone="accent" />
+      <DateRangeFilter preset={range.preset} from={range.from} to={range.to} onChange={(patch) => setRange((r) => ({ ...r, ...patch }))} />
+
+      {(breakdown.error || records.error) && <p className="text-sm text-destructive">{breakdown.error || records.error}</p>}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label={periodLabel(range, from, to)} value={formatINR(periodTotal)} icon={Wallet} loading={breakdown.loading} />
+        <StatCard
+          label="Biggest category"
+          value={biggest ? biggest.label : '—'}
+          icon={Wallet}
+          hint={biggest ? `${formatINR(biggest.total)} · ${Math.round((biggest.total / periodTotal) * 100)}% of spend` : 'No expenses'}
+          loading={breakdown.loading}
+        />
+        <StatCard label="All time" value={formatINR(allTimeTotal)} icon={Wallet} tone="accent" loading={allTime.loading} />
       </div>
 
-      <DateRangeFilter
-        preset={range.preset}
-        from={range.from}
-        to={range.to}
-        onChange={(patch) => setRange((r) => ({ ...r, ...patch }))}
-      />
-
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
-
-      {!loading && records.length === 0 ? (
-        <EmptyState
-          icon={Wallet}
-          title={allTimeAmounts.length === 0 ? 'No expenses logged yet' : 'No expenses in this period'}
-          description={allTimeAmounts.length === 0 ? 'Track feed, medical, and other farm costs here.' : 'Try a different date range.'}
-        />
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Category</th>
-                  <th className="px-4 py-3 font-medium">Description</th>
-                  <th className="px-4 py-3 font-medium">Amount</th>
-                  <th className="px-4 py-3 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((r) => (
-                  <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-3 text-muted-foreground">{formatDate(r.expense_date)}</td>
-                    <td className="px-4 py-3">
-                      <Badge tone={CATEGORY_TONE[r.category] ?? 'gray'}>{r.category}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{r.description || '—'}</td>
-                    <td className="px-4 py-3 font-medium text-foreground">{formatINR(r.amount)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          aria-label="Edit expense"
-                          onClick={() => {
-                            setEditing(r)
-                            setModalOpen(true)
-                          }}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                          <Pencil size={15} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Delete expense"
-                          onClick={() => setDeleteTarget(r)}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 size={15} aria-hidden="true" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="xl:order-2">
+          <ChartCard title="Where the money went" description={periodLabel(range, from, to)}>
+            {breakdown.loading ? <Skeleton className="h-48 w-full" /> : <BreakdownList rows={rows} />}
+          </ChartCard>
         </div>
-      )}
+
+        <div className="xl:order-1 xl:col-span-2">
+          <div className="mb-3">
+            <FilterChips label="Filter by category" options={CATEGORIES} value={category} onChange={setCategory} />
+          </div>
+          <DataTable
+            rows={records.data}
+            loading={records.loading}
+            totalCount={records.count}
+            page={records.page}
+            onPageChange={records.setPage}
+            minWidth={560}
+            empty={<EmptyState icon={Wallet} title="No expenses in this period" description="Try a different date range or category, or add an expense." />}
+            columns={[
+              { header: 'Description', cell: (r) => <span className="text-foreground">{r.description || r.category}</span> },
+              { header: 'Date', cell: (r) => formatDate(r.expense_date) },
+              { header: 'Category', cell: (r) => <Badge tone={CATEGORY_TONE[r.category] ?? 'gray'}>{r.category}</Badge> },
+              { header: 'Amount', align: 'right', cell: (r) => <span className="font-medium text-foreground">{formatINR(r.amount)}</span> },
+            ]}
+            actions={(r) => (
+              <RowActions
+                label={`expense ${r.description || r.category}`}
+                onEdit={() => {
+                  setEditing(r)
+                  setModalOpen(true)
+                }}
+                onDelete={() => setDeleteTarget(r)}
+              />
+            )}
+          />
+        </div>
+      </div>
 
       <ExpenseModal
         open={modalOpen}
@@ -165,7 +152,8 @@ export default function Expenses() {
         record={editing}
         onSaved={() => {
           setModalOpen(false)
-          refetch()
+          toast.success(editing ? 'Expense updated.' : 'Expense added.')
+          refresh()
         }}
       />
 

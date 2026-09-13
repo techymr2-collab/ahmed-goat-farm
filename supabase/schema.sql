@@ -1,4 +1,4 @@
--- Ahmed Goat Farm — database schema
+-- Bharat Goat Farm (Geedgarh) — database schema
 -- Run this once in your Supabase project's SQL Editor (Project → SQL Editor → New query → Run)
 
 create extension if not exists "pgcrypto";

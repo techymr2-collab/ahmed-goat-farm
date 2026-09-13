@@ -3,13 +3,14 @@ import Modal from './Modal'
 import { Field, Input, Textarea } from './FormField'
 import GoatCombobox from './GoatCombobox'
 import { supabase } from '../lib/supabaseClient'
+import { todayISO } from '../lib/dateRanges'
 
-const emptyForm = {
+const emptyForm = () => ({
   goat_id: '',
-  record_date: new Date().toISOString().slice(0, 10),
+  record_date: todayISO(),
   weight_kg: '',
   notes: '',
-}
+})
 
 export default function WeightRecordModal({ open, onClose, onSaved, record, goats, lockGoatId }) {
   const [form, setForm] = useState(emptyForm)
@@ -27,7 +28,7 @@ export default function WeightRecordModal({ open, onClose, onSaved, record, goat
               weight_kg: record.weight_kg ?? '',
               notes: record.notes ?? '',
             }
-          : { ...emptyForm, goat_id: lockGoatId ?? '' }
+          : { ...emptyForm(), goat_id: lockGoatId ?? '' }
       )
     }
   }, [open, record, lockGoatId])

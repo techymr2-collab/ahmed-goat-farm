@@ -80,7 +80,7 @@ export default function Profile() {
 
   return (
     <div className="max-w-xl">
-      <PageHeader title="Your profile" description="Update how you appear across Ahmed Goat Farm." />
+      <PageHeader title="Your profile" description="Update how you appear across Bharat Goat Farm." />
 
       <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-surface p-6">
         <div className="mb-6 flex items-center gap-4">
@@ -123,7 +123,7 @@ export default function Profile() {
 
         <div className="space-y-4">
           <Field label="Display name">
-            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Mustufa Ahmed" />
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your name" />
           </Field>
 
           <Field label="Email">

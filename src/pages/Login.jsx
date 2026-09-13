@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import Brand from '../components/Brand'
+import { friendlyError } from '../hooks/useSupabaseTable'
 
 export default function Login() {
   const { user, signIn } = useAuth()
@@ -16,20 +18,21 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setSubmitting(true)
-    const { error } = await signIn(email, password)
+    try {
+      const { error } = await signIn(email, password)
+      if (error) setError(friendlyError(error))
+    } catch (err) {
+      setError(friendlyError(err))
+    }
     setSubmitting(false)
-    if (error) setError(error.message)
   }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-2xl font-heading font-bold text-white">
-            AG
-          </div>
-          <h1 className="font-heading text-2xl font-semibold text-foreground">Ahmed Goat Farm</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Sign in to manage your herd</p>
+        <div className="mb-8">
+          <Brand size="lg" />
+          <p className="mt-4 text-center text-sm text-muted-foreground">Sign in to manage your herd</p>
         </div>
 
         {!isSupabaseConfigured && (
@@ -51,7 +54,7 @@ export default function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
-              placeholder="you@ahmedgoatfarm.in"
+              placeholder="you@example.com"
             />
           </div>
 

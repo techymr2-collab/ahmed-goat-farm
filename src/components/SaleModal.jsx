@@ -3,9 +3,10 @@ import Modal from './Modal'
 import { Field, Input, Select, Textarea } from './FormField'
 import GoatCombobox from './GoatCombobox'
 import { supabase } from '../lib/supabaseClient'
+import { todayISO } from '../lib/dateRanges'
 
-const emptyForm = {
-  sale_date: new Date().toISOString().slice(0, 10),
+const emptyForm = () => ({
+  sale_date: todayISO(),
   sale_type: 'Goat',
   goat_id: '',
   buyer_name: '',
@@ -13,7 +14,8 @@ const emptyForm = {
   quantity: '',
   amount: '',
   notes: '',
-}
+  mark_sold: true,
+})
 
 export default function SaleModal({ open, onClose, onSaved, record, goats }) {
   const [form, setForm] = useState(emptyForm)
@@ -34,8 +36,9 @@ export default function SaleModal({ open, onClose, onSaved, record, goats }) {
               quantity: record.quantity ?? '',
               amount: record.amount ?? '',
               notes: record.notes ?? '',
+              mark_sold: false,
             }
-          : emptyForm
+          : emptyForm()
       )
     }
   }, [open, record])
@@ -49,8 +52,9 @@ export default function SaleModal({ open, onClose, onSaved, record, goats }) {
     setSaving(true)
     setError('')
 
+    const { mark_sold, ...fields } = form
     const payload = {
-      ...form,
+      ...fields,
       goat_id: form.sale_type === 'Goat' && form.goat_id ? form.goat_id : null,
       quantity: form.quantity === '' ? null : Number(form.quantity),
       amount: Number(form.amount),
@@ -59,6 +63,15 @@ export default function SaleModal({ open, onClose, onSaved, record, goats }) {
     const { error } = record
       ? await supabase.from('sales').update(payload).eq('id', record.id)
       : await supabase.from('sales').insert(payload)
+
+    if (!error && mark_sold && payload.goat_id) {
+      const { error: statusError } = await supabase.from('goats').update({ status: 'Sold' }).eq('id', payload.goat_id)
+      if (statusError) {
+        setSaving(false)
+        setError(`Sale saved, but the goat's status couldn't be updated: ${statusError.message}`)
+        return
+      }
+    }
 
     setSaving(false)
     if (error) {
@@ -85,7 +98,11 @@ export default function SaleModal({ open, onClose, onSaved, record, goats }) {
 
           {form.sale_type === 'Goat' && (
             <Field label="Goat sold">
-              <GoatCombobox goats={goats} value={form.goat_id} onChange={(id) => update('goat_id', id)} />
+              <GoatCombobox
+                goats={goats.filter((g) => g.status !== 'Sold' || g.id === form.goat_id)}
+                value={form.goat_id}
+                onChange={(id) => update('goat_id', id)}
+              />
             </Field>
           )}
 
@@ -105,6 +122,18 @@ export default function SaleModal({ open, onClose, onSaved, record, goats }) {
             <Input required type="number" min="0" step="0.01" value={form.amount} onChange={(e) => update('amount', e.target.value)} />
           </Field>
         </div>
+
+        {form.sale_type === 'Goat' && form.goat_id && !record && (
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={form.mark_sold}
+              onChange={(e) => update('mark_sold', e.target.checked)}
+              className="h-4 w-4 cursor-pointer accent-[var(--color-primary)]"
+            />
+            Mark this goat as sold in the registry
+          </label>
+        )}
 
         <Field label="Notes">
           <Textarea value={form.notes} onChange={(e) => update('notes', e.target.value)} />

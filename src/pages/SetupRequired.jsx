@@ -9,7 +9,7 @@ export default function SetupRequired() {
         </div>
         <h1 className="font-heading text-lg font-semibold text-foreground">Connect your database</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Ahmed Goat Farm needs a Supabase project to store data and manage logins. Add{' '}
+          Bharat Goat Farm needs a Supabase project to store data and manage logins. Add{' '}
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">VITE_SUPABASE_URL</code> and{' '}
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">VITE_SUPABASE_ANON_KEY</code> to a{' '}
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">.env</code> file, then restart the dev server.

@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import Modal from './Modal'
 import { Field, Input, Select, Textarea } from './FormField'
 import { supabase } from '../lib/supabaseClient'
+import { todayISO } from '../lib/dateRanges'
 
-const emptyForm = {
-  expense_date: new Date().toISOString().slice(0, 10),
+const emptyForm = () => ({
+  expense_date: todayISO(),
   category: 'Feed',
   description: '',
   amount: '',
-}
+})
 
 export default function ExpenseModal({ open, onClose, onSaved, record }) {
   const [form, setForm] = useState(emptyForm)
@@ -26,7 +27,7 @@ export default function ExpenseModal({ open, onClose, onSaved, record }) {
               description: record.description ?? '',
               amount: record.amount ?? '',
             }
-          : emptyForm
+          : emptyForm()
       )
     }
   }, [open, record])

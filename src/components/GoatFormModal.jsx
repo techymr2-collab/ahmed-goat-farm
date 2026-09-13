@@ -22,11 +22,11 @@ const emptyForm = {
 }
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
-const TAG_PREFIX = 'AG-'
+const TAG_PREFIX = 'BGF-'
 
 function getNextTagId(goats) {
   const numbers = goats
-    .map((g) => /^AG-(\d+)$/i.exec(g.tag_id || ''))
+    .map((g) => /^BGF-(\d+)$/i.exec(g.tag_id || ''))
     .filter(Boolean)
     .map((match) => parseInt(match[1], 10))
   const next = numbers.length ? Math.max(...numbers) + 1 : 1
@@ -62,10 +62,16 @@ export default function GoatFormModal({ open, onClose, onSaved, goat, allGoats }
               notes: goat.notes ?? '',
               photo_url: goat.photo_url ?? '',
             }
-          : { ...emptyForm, tag_id: getNextTagId(allGoats) }
+          : emptyForm
       )
       setPhotoPreview(goat?.photo_url ?? '')
     }
+  }, [open, goat])
+
+  // The goat list may still be loading when the form opens (e.g. from a dashboard
+  // shortcut), so keep the suggested tag in step without resetting typed fields.
+  useEffect(() => {
+    if (open && !goat) setForm((f) => ({ ...f, tag_id: getNextTagId(allGoats) }))
   }, [open, goat, allGoats])
 
   function update(field, value) {
@@ -126,7 +132,11 @@ export default function GoatFormModal({ open, onClose, onSaved, goat, allGoats }
 
     setSaving(false)
     if (error) {
-      setError(error.message)
+      setError(
+        error.code === '23505'
+          ? `Tag ${form.tag_id} was just used by another entry. Close this form and open it again to get the next number.`
+          : error.message
+      )
       return
     }
     onSaved()

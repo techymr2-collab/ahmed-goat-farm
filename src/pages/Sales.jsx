@@ -1,173 +1,174 @@
 import { useMemo, useState } from 'react'
-import { Plus, IndianRupee, Pencil, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus, IndianRupee } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
+import { usePagedQuery } from '../hooks/usePagedQuery'
+import { useGoatOptions } from '../hooks/useGoatOptions'
+import { useNewParam } from '../hooks/useNewParam'
+import { useToast } from '../context/ToastContext'
 import PageHeader from '../components/PageHeader'
 import StatCard from '../components/StatCard'
 import Badge from '../components/Badge'
+import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
+import DataTable, { RowActions } from '../components/DataTable'
+import DateRangeFilter from '../components/DateRangeFilter'
+import FilterChips from '../components/FilterChips'
+import ExportButton from '../components/ExportButton'
+import BreakdownList from '../components/BreakdownList'
 import SaleModal from '../components/SaleModal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import DateRangeFilter from '../components/DateRangeFilter'
-import { formatDate, formatINR } from '../lib/format'
-import { getMonthRange, getYearRange } from '../lib/dateRanges'
+import { ChartCard } from '../components/charts'
+import { Skeleton } from '../components/Skeleton'
+import { formatDate, formatINR, formatNumber, goatLabel } from '../lib/format'
+import { resolveRange, periodLabel } from '../lib/dateRanges'
+import { exporters } from '../lib/exports'
 
 const TYPE_TONE = { Goat: 'green', Milk: 'amber', Other: 'gray' }
+const TYPES = ['All', 'Goat', 'Milk', 'Other']
 
-const PERIOD_LABELS = { month: 'This month', lastMonth: 'Last month', year: 'This year', all: 'All time' }
+function saleDetails(r) {
+  if (r.sale_type === 'Goat' && r.goats) {
+    return (
+      <Link to={`/goats/${r.goat_id}`} className="text-foreground hover:text-primary hover:underline">
+        {goatLabel(r.goats)}
+      </Link>
+    )
+  }
+  if (r.sale_type === 'Milk' && r.quantity) return `${formatNumber(r.quantity)} L`
+  return r.notes || '—'
+}
 
 export default function Sales() {
-  const { data: goats } = useSupabaseTable(() => supabase.from('goats').select('id, tag_id, name, sex').order('tag_id'), [])
-
+  const toast = useToast()
+  const { goats, refetch: refetchGoats } = useGoatOptions()
+  const [range, setRange] = useState({ preset: 'month', from: null, to: null })
+  const [type, setType] = useState('All')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [range, setRange] = useState({ preset: 'month', from: null, to: null })
+  const { from, to } = useMemo(() => resolveRange(range), [range])
 
-  const { from, to } = useMemo(() => {
-    switch (range.preset) {
-      case 'month':
-        return getMonthRange(0)
-      case 'lastMonth':
-        return getMonthRange(-1)
-      case 'year':
-        return getYearRange()
-      case 'custom':
-        return { from: range.from, to: range.to }
-      default:
-        return { from: null, to: null }
-    }
-  }, [range])
+  const breakdown = useSupabaseTable(() => supabase.rpc('sales_by_type', { p_from: from, p_to: to }), [from, to])
+  const allTime = useSupabaseTable(() => supabase.rpc('sales_by_type', { p_from: null, p_to: null }), [])
 
-  // Filtered server-side by the selected range, so history doesn't have to be
-  // pulled in full just to show one month of records.
-  const { data: records, loading, error, refetch } = useSupabaseTable(() => {
-    let query = supabase.from('sales').select('*, goats(tag_id, name)').order('sale_date', { ascending: false })
+  const records = usePagedQuery(() => {
+    let query = supabase.from('sales').select('*, goats(tag_id, name)', { count: 'exact' })
     if (from && to) query = query.gte('sale_date', from).lte('sale_date', to)
-    return query
-  }, [from, to])
+    if (type !== 'All') query = query.eq('sale_type', type)
+    return query.order('sale_date', { ascending: false }).order('created_at', { ascending: false })
+  }, [from, to, type])
 
-  // Lightweight amount-only fetch so the "All time" figure stays cheap
-  // regardless of how much history has piled up.
-  const { data: allTimeAmounts } = useSupabaseTable(() => supabase.from('sales').select('amount'), [])
+  useNewParam(() => {
+    setEditing(null)
+    setModalOpen(true)
+  })
 
-  const periodTotal = useMemo(() => records.reduce((sum, r) => sum + Number(r.amount), 0), [records])
-  const allTimeTotal = useMemo(() => allTimeAmounts.reduce((sum, r) => sum + Number(r.amount), 0), [allTimeAmounts])
+  const rows = breakdown.data.map((r) => ({
+    label: r.sale_type,
+    total: Number(r.total),
+    hint:
+      r.sale_type === 'Milk' && r.quantity
+        ? `${formatNumber(r.quantity)} L sold · ${formatINR(Number(r.total) / Number(r.quantity))}/L`
+        : `${r.entries} sale${Number(r.entries) === 1 ? '' : 's'}`,
+  }))
+  const periodTotal = rows.reduce((s, r) => s + r.total, 0)
+  const allTimeTotal = allTime.data.reduce((s, r) => s + Number(r.total), 0)
+  const salesCount = breakdown.data.reduce((s, r) => s + Number(r.entries), 0)
 
-  const periodLabel =
-    range.preset === 'custom'
-      ? from && to
-        ? `${formatDate(from)} – ${formatDate(to)}`
-        : 'Custom range'
-      : PERIOD_LABELS[range.preset]
+  function refresh() {
+    records.refetch()
+    breakdown.refetch()
+    allTime.refetch()
+    refetchGoats()
+  }
 
   async function handleDelete() {
-    if (!deleteTarget) return
-    await supabase.from('sales').delete().eq('id', deleteTarget.id)
+    const target = deleteTarget
     setDeleteTarget(null)
-    refetch()
+    const { error } = await supabase.from('sales').delete().eq('id', target.id)
+    if (error) return toast.error(`Couldn't delete: ${error.message}`)
+    toast.success('Sale deleted.')
+    refresh()
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         title="Sales"
-        description="Goat and milk sales, buyers, and revenue."
+        description="Goat, milk, and other sales — buyers and revenue."
         action={
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(null)
-              setModalOpen(true)
-            }}
-            className="flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark"
-          >
-            <Plus size={16} aria-hidden="true" />
-            Add sale
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <ExportButton load={() => exporters.sales.load(from, to)} onExport={(r) => exporters.sales.save(r, from, to)} />
+            <Button
+              icon={Plus}
+              onClick={() => {
+                setEditing(null)
+                setModalOpen(true)
+              }}
+            >
+              Add sale
+            </Button>
+          </div>
         }
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard label={periodLabel} value={formatINR(periodTotal)} icon={IndianRupee} />
-        <StatCard label="All time" value={formatINR(allTimeTotal)} icon={IndianRupee} tone="accent" />
+      <DateRangeFilter preset={range.preset} from={range.from} to={range.to} onChange={(patch) => setRange((r) => ({ ...r, ...patch }))} />
+
+      {(breakdown.error || records.error) && <p className="text-sm text-destructive">{breakdown.error || records.error}</p>}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label={periodLabel(range, from, to)} value={formatINR(periodTotal)} icon={IndianRupee} loading={breakdown.loading} />
+        <StatCard
+          label="Number of sales"
+          value={salesCount}
+          icon={IndianRupee}
+          hint={salesCount ? `Average ${formatINR(periodTotal / salesCount)} per sale` : 'No sales'}
+          loading={breakdown.loading}
+        />
+        <StatCard label="All time" value={formatINR(allTimeTotal)} icon={IndianRupee} tone="accent" loading={allTime.loading} />
       </div>
 
-      <DateRangeFilter
-        preset={range.preset}
-        from={range.from}
-        to={range.to}
-        onChange={(patch) => setRange((r) => ({ ...r, ...patch }))}
-      />
-
-      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
-
-      {!loading && records.length === 0 ? (
-        <EmptyState
-          icon={IndianRupee}
-          title={allTimeAmounts.length === 0 ? 'No sales recorded yet' : 'No sales in this period'}
-          description={allTimeAmounts.length === 0 ? 'Log goat and milk sales to track farm revenue.' : 'Try a different date range.'}
-        />
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Details</th>
-                  <th className="px-4 py-3 font-medium">Buyer</th>
-                  <th className="px-4 py-3 font-medium">Amount</th>
-                  <th className="px-4 py-3 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((r) => (
-                  <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-3 text-muted-foreground">{formatDate(r.sale_date)}</td>
-                    <td className="px-4 py-3">
-                      <Badge tone={TYPE_TONE[r.sale_type] ?? 'gray'}>{r.sale_type}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {r.sale_type === 'Goat' && r.goats
-                        ? `${r.goats.tag_id}${r.goats.name ? ' · ' + r.goats.name : ''}`
-                        : r.sale_type === 'Milk' && r.quantity
-                          ? `${r.quantity} L`
-                          : r.notes || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{r.buyer_name || '—'}</td>
-                    <td className="px-4 py-3 font-medium text-foreground">{formatINR(r.amount)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          aria-label="Edit sale"
-                          onClick={() => {
-                            setEditing(r)
-                            setModalOpen(true)
-                          }}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                          <Pencil size={15} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Delete sale"
-                          onClick={() => setDeleteTarget(r)}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 size={15} aria-hidden="true" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="xl:order-2">
+          <ChartCard title="Revenue by type" description={periodLabel(range, from, to)}>
+            {breakdown.loading ? <Skeleton className="h-40 w-full" /> : <BreakdownList rows={rows} emptyText="No sales in this period." />}
+          </ChartCard>
         </div>
-      )}
+
+        <div className="xl:order-1 xl:col-span-2">
+          <div className="mb-3">
+            <FilterChips label="Filter by type" options={TYPES} value={type} onChange={setType} />
+          </div>
+          <DataTable
+            rows={records.data}
+            loading={records.loading}
+            totalCount={records.count}
+            page={records.page}
+            onPageChange={records.setPage}
+            minWidth={680}
+            empty={<EmptyState icon={IndianRupee} title="No sales in this period" description="Try a different date range or type, or add a sale." />}
+            columns={[
+              { header: 'Details', cell: saleDetails },
+              { header: 'Date', cell: (r) => formatDate(r.sale_date) },
+              { header: 'Type', cell: (r) => <Badge tone={TYPE_TONE[r.sale_type] ?? 'gray'}>{r.sale_type}</Badge> },
+              { header: 'Buyer', cell: (r) => r.buyer_name || '—' },
+              { header: 'Amount', align: 'right', cell: (r) => <span className="font-medium text-foreground">{formatINR(r.amount)}</span> },
+            ]}
+            actions={(r) => (
+              <RowActions
+                label={`${r.sale_type} sale`}
+                onEdit={() => {
+                  setEditing(r)
+                  setModalOpen(true)
+                }}
+                onDelete={() => setDeleteTarget(r)}
+              />
+            )}
+          />
+        </div>
+      </div>
 
       <SaleModal
         open={modalOpen}
@@ -176,7 +177,8 @@ export default function Sales() {
         goats={goats}
         onSaved={() => {
           setModalOpen(false)
-          refetch()
+          toast.success(editing ? 'Sale updated.' : 'Sale added.')
+          refresh()
         }}
       />
 
@@ -185,7 +187,7 @@ export default function Sales() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         title="Delete sale?"
-        description="This record will be permanently removed."
+        description="This record will be permanently removed. The goat's status is not changed."
       />
     </div>
   )

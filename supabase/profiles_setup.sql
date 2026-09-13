@@ -1,4 +1,4 @@
--- Ahmed Goat Farm — user profiles (display name + avatar)
+-- Bharat Goat Farm (Geedgarh) — user profiles (display name + avatar)
 -- Safe to run more than once.
 
 create table if not exists profiles (

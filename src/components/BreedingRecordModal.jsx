@@ -61,7 +61,11 @@ export default function BreedingRecordModal({ open, onClose, onSaved, record, go
     setForm((f) => ({
       ...f,
       mating_date: value,
-      expected_kidding_date: f.expected_kidding_date || addDays(value, 150),
+      // Keep the expected date in step with the mating date unless it was changed by hand.
+      expected_kidding_date:
+        !f.expected_kidding_date || f.expected_kidding_date === addDays(f.mating_date, 150)
+          ? addDays(value, 150)
+          : f.expected_kidding_date,
     }))
   }
 
